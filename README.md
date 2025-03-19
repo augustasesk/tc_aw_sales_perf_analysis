@@ -29,4 +29,5 @@ Through this analysis, I identified **sales trends, profit drivers, and key prod
 
 - `sales_perf_dashboard.pbix` – Power BI dashboard  
 - `presentation_executive.pdf` – Executive-level summary  
-- `presentation_sales_team.pdf` – Detailed sales insights  
+- `presentation_sales_team.pdf` – Detailed sales insights
+- `sql_code_sales_perf.txt` – BigQuery SQL code (multiple queries)   
