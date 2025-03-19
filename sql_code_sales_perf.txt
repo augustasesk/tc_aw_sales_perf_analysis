@@ -1,0 +1,165 @@
+  -- Table 1 (Fact Table - Sales Order Header Data)
+
+SELECT
+  salesorderheader.SalesOrderID,
+  salesorderheader.OrderDate,
+  salesorderheader.ShipDate,
+  DATE_DIFF(CAST(salesorderheader.ShipDate AS DATETIME), CAST(salesorderheader.OrderDate AS DATETIME), DAY) AS DaysToShip,
+  salesorderheader.SalesPersonID,
+  salesorderheader.SubTotal,
+  salesorderheader.TaxAmt,
+  salesorderheader.Freight,
+  salesorderheader.TotalDue,
+  salesorderheader.CustomerID,
+  salesorderheader.TerritoryID
+FROM
+  `adwentureworks_db.salesorderheader` AS salesorderheader;
+
+  -- Table 2 (Customer Data)
+
+SELECT
+  customer.CustomerID,
+  CASE
+    WHEN customer.CustomerType = 'I' THEN 'Individual'
+    ELSE 'Store'
+END
+  AS CustomerType,
+  customer.TerritoryID
+FROM
+  `adwentureworks_db.customer` AS customer;
+
+  -- Table 3 (Territorial Data)
+
+SELECT
+  salesterritory.TerritoryID,
+  salesterritory.Name,
+  salesterritory.CountryRegionCode
+FROM
+  `adwentureworks_db.salesterritory` AS salesterritory;
+
+  -- Table 4 (Sales Order Data)
+
+SELECT
+  salesorderdetail.SalesOrderID,
+  salesorderdetail.ProductID,
+  salesorderdetail.OrderQty,
+  salesorderdetail.SpecialOfferID,
+  salesorderdetail.LineTotal,
+  -- Using LineTotal as an accurate value for SubTotal value, which was not accurate in the SalesOrderHeader table
+  salesorderdetail.LineTotal * 0.08 AS TaxAmt,
+  -- 0.08 is a calculated constant Tax percentile, calculated and fact checked from the SalesOrderHeader table
+  salesorderdetail.LineTotal * 0.025 AS Freight,
+  -- 0.025 is a calculated constant shipping cost percentile, calculated and fact checked from the SalesOrderHeader table
+  salesorderdetail.LineTotal + (salesorderdetail.LineTotal * 0.08) + (salesorderdetail.LineTotal * 0.025) AS TotalDue	-- New and accurate total sales measure
+FROM
+  `adwentureworks_db.salesorderdetail` AS salesorderdetail;
+
+  -- Table 5 (Sales Reason Data)
+
+SELECT
+  salesorderheadersalesreason.SalesOrderID,
+  salesreason.SalesReasonID,
+  salesreason.Name,
+  salesreason.ReasonType
+FROM
+  `tc-da-1.adwentureworks_db.salesorderheadersalesreason` AS salesorderheadersalesreason
+LEFT JOIN
+  `tc-da-1.adwentureworks_db.salesreason` AS salesreason
+USING
+  (SalesReasonID);
+
+  -- Table 6 (Product Data)
+
+SELECT
+  product.ProductID,
+  product.Name,
+  product.StandardCost,
+  productsubcategory.Name AS Subcategory,
+  productcategory.Name AS Category
+FROM
+  `adwentureworks_db.product` AS product
+LEFT JOIN
+  `adwentureworks_db.productsubcategory` AS productsubcategory
+ON
+  product.ProductSubcategoryID = productsubcategory.ProductSubcategoryID
+LEFT JOIN
+  `adwentureworks_db.productcategory` AS productcategory
+ON
+  productsubcategory.ProductCategoryID = productcategory.ProductCategoryID;
+
+  -- Table 7 (Sales Person Data)
+
+WITH
+  SalesPerson AS (
+  SELECT
+    CAST(salesperson.SalesPersonID AS STRING) AS SalesPersonID,
+    SUM(salesorderheader.TotalDue) AS TotalSalesPerPerson,
+    RANK() OVER (ORDER BY SUM(salesorderheader.TotalDue) DESC) AS SalesRank
+  FROM
+    `tc-da-1.adwentureworks_db.salesorderheader` AS salesorderheader
+  LEFT JOIN
+    `adwentureworks_db.salesperson` AS salesperson
+  ON
+    salesorderheader.SalesPersonID = salesperson.SalesPersonID
+  GROUP BY
+    SalesPersonID ),
+  TotalSales AS (
+  SELECT
+    SUM(salesorderheader.TotalDue) AS TotalSales
+  FROM
+    `tc-da-1.adwentureworks_db.salesorderheader` AS salesorderheader )
+SELECT
+  *,
+  ROUND(CumulativeSum / TotalSales, 2) AS CumulativePercent
+FROM (
+  SELECT
+    SalesPerson.SalesPersonID,
+    SalesPerson.TotalSalesPerPerson AS TotalSalesPerPerson,
+    SalesPerson.SalesRank AS SalesRank,
+    SUM(SalesPerson.TotalSalesPerPerson) OVER (ORDER BY SalesRank) AS CumulativeSum,
+    TotalSales.TotalSales AS TotalSales
+  FROM
+    SalesPerson,
+    TotalSales )
+ORDER BY
+  CumulativePercent;
+
+  -- Table 8 (Geographical Data)
+
+SELECT
+  salesorderheader.SalesOrderID,
+  salesorderheader.OrderDate,
+  salesorderheader.CustomerID,
+  salesorderheader.SalesPersonID,
+  salesorderheader.TotalDue,
+  province.stateprovincecode AS ShipProvince,
+  province.CountryRegionCode AS CountryCode,
+  province.name AS CountryStateName
+FROM
+  `tc-da-1.adwentureworks_db.salesorderheader` AS salesorderheader
+LEFT JOIN
+  `tc-da-1.adwentureworks_db.address` AS address
+ON
+  salesorderheader.ShipToAddressID = address.AddressID
+LEFT JOIN
+  `tc-da-1.adwentureworks_db.stateprovince` AS province
+ON
+  address.stateprovinceid = province.stateprovinceid;
+
+  -- Table 9 (Special Offer Data)
+  
+SELECT
+  DISTINCT salesorderdetail.SalesOrderID,
+  salesorderdetail.ProductID,
+  specialofferproduct.SpecialOfferID,
+  specialoffer.Description
+FROM
+  `adwentureworks_db.salesorderdetail` AS salesorderdetail
+LEFT JOIN
+  `adwentureworks_db.specialofferproduct` AS specialofferproduct
+USING
+  (SpecialOfferID)
+LEFT JOIN
+  `adwentureworks_db.specialoffer` AS specialoffer
+USING
+  (SpecialOfferID);
